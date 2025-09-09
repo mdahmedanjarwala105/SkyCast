@@ -10,6 +10,8 @@ pydantic = "*"
 uvicorn = "*"
 python-dotenv = "*"
 openai = "*"
+python-multipart = "*"
+google-generativeai = "*"
 
 [dev-packages]
 pytest = "*"
@@ -17,3 +19,7 @@ respx = "*"
 
 [requires]
 python_version = "3.13"
+
+[scripts]
+dev = "uvicorn backend.main:app --reload --port 8000"
+test = "pytest -q"
