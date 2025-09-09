@@ -4,8 +4,16 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+fastapi = "*"
+httpx = "*"
+pydantic = "*"
+uvicorn = "*"
+python-dotenv = "*"
+openai = "*"
 
 [dev-packages]
+pytest = "*"
+respx = "*"
 
 [requires]
 python_version = "3.13"
