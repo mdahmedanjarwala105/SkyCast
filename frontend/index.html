@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>SkyCast — Beginner</title>
+    <style>body{font-family:sans-serif;max-width:800px;margin:20px auto;padding:0 12px}.card{border:1px solid #ddd;border-radius:8px;padding:12px;margin:10px 0}pre{white-space:pre-wrap}</style>
+</head>
+<body>
+    <h1>🌤️ SkyCast</h1>
+    <div class="card">
+        <h3>Ask a question</h3>
+        <input id="q" placeholder="Umbrella at 6 PM?" style="width:70%">
+        <button onclick="ask()">Ask</button>
+        <div id="answer"></div>
+    </div>
+
+    <div class="card">
+        <h3>Plan my day</h3>
+        <button onclick="plan()">Generate plan</button>
+        <div id="plan"></div>
+    </div>
+
+    <div class="card">
+        <h3>Visual nowcast</h3>
+        <input id="img" type="file" accept="image/*">
+        <button onclick="nowcast()">Analyze</button>
+        <div id="vision"></div>
+    </div>
+
+<script>
+const API='http://localhost:8000';
+async function ask(){const q=document.getElementById('q').value;const r=await fetch(`${API}/api/ask`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})});document.getElementById('answer').innerHTML=`<pre>${(await r.json()).answer}</pre>`}
+async function plan(){const r=await fetch(`${API}/api/plan`,{method:'POST'});document.getElementById('plan').innerHTML=`<pre>${(await r.json()).plan}</pre>`}
+async function nowcast(){const f=document.getElementById('img').files[0];if(!f){alert('Pick an image');return;}const fd=new FormData();fd.append('image',f);const r=await fetch(`${API}/api/nowcast`,{method:'POST',body:fd});document.getElementById('vision').innerHTML=`<pre>${(await r.json()).vision_nowcast}</pre>`}
+</script>
+</body>
+</html>
