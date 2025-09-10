@@ -36,6 +36,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Friendly home so '/' doesn’t 404
 @app.get("/")
 def root():
@@ -51,13 +52,16 @@ def root():
         ],
     }
 
+
 class WxRequest(BaseModel):
     lat: Optional[float] = None
     lon: Optional[float] = None
     units: Optional[str] = None  # "metric" or "imperial"
 
+
 class QARequest(WxRequest):
     question: str
+
 
 # -------------------- Forecast via Open-Meteo (no key) --------------------
 async def fetch_forecast(lat: float, lon: float, units: str):
@@ -88,8 +92,8 @@ async def fetch_forecast(lat: float, lon: float, units: str):
         om = r.json()
 
     cur_temp = om.get("current", {}).get("temperature_2m")
-    cloud = (om.get("current", {}).get("cloud_cover") or 0)
-    precip = (om.get("current", {}).get("precipitation") or 0.0)
+    cloud = om.get("current", {}).get("cloud_cover") or 0
+    precip = om.get("current", {}).get("precipitation") or 0.0
 
     if precip > 0.1:
         main = "Rain"
@@ -105,28 +109,34 @@ async def fetch_forecast(lat: float, lon: float, units: str):
     hourly = []
     times = om.get("hourly", {}).get("time", []) or []
     temps = om.get("hourly", {}).get("temperature_2m", []) or []
-    pops  = om.get("hourly", {}).get("precipitation_probability", []) or []
+    pops = om.get("hourly", {}).get("precipitation_probability", []) or []
     for i in range(min(len(times), len(temps))):
-        hourly.append({
-            "dt": i,
-            "temp": temps[i],
-            "pop": (pops[i] or 0) / 100.0,
-        })
+        hourly.append(
+            {
+                "dt": i,
+                "temp": temps[i],
+                "pop": (pops[i] or 0) / 100.0,
+            }
+        )
 
     daily = []
     tmax = om.get("daily", {}).get("temperature_2m_max", []) or []
     tmin = om.get("daily", {}).get("temperature_2m_min", []) or []
     popd = om.get("daily", {}).get("precipitation_probability_max", []) or []
     for i in range(min(len(tmax), len(tmin))):
-        daily.append({
-            "temp": {"min": tmin[i], "max": tmax[i]},
-            "pop": (popd[i] or 0) / 100.0,
-        })
+        daily.append(
+            {
+                "temp": {"min": tmin[i], "max": tmax[i]},
+                "pop": (popd[i] or 0) / 100.0,
+            }
+        )
 
     return {"current": current, "hourly": hourly, "daily": daily}
 
+
 # -------------------- OpenAI text models w/ safe fallbacks --------------------
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
+
 
 def _fallback_text_answer(question: str, forecast: dict) -> str:
     cur = forecast.get("current", {}) or {}
@@ -137,20 +147,30 @@ def _fallback_text_answer(question: str, forecast: dict) -> str:
 
     rain_msg = (
         "Likely rain in the next few hours—carry an umbrella. ☔"
-        if max_pop >= 0.5 else
-        "There’s a small chance of light showers—consider a compact umbrella. 🌦️"
-        if max_pop >= 0.2 else
-        "Rain is unlikely in the next few hours. 🙂"
+        if max_pop >= 0.5
+        else (
+            "There’s a small chance of light showers—consider a compact umbrella. 🌦️"
+            if max_pop >= 0.2
+            else "Rain is unlikely in the next few hours. 🙂"
+        )
     )
-    temp_msg = f" Current temp: {t}°{'F' if DEFAULT_UNITS=='imperial' else 'C'}." if t is not None else ""
+    temp_msg = (
+        f" Current temp: {t}°{'F' if DEFAULT_UNITS=='imperial' else 'C'}."
+        if t is not None
+        else ""
+    )
     return f"{rain_msg}{temp_msg}"
+
 
 def _fallback_plan(forecast: dict) -> str:
     hourly = forecast.get("hourly", []) or []
     daily = forecast.get("daily", []) or []
     temps = [h.get("temp") for h in hourly[:12] if h.get("temp") is not None]
     if not temps and daily:
-        temps = [daily[0].get("temp", {}).get("min"), daily[0].get("temp", {}).get("max")]
+        temps = [
+            daily[0].get("temp", {}).get("min"),
+            daily[0].get("temp", {}).get("max"),
+        ]
         temps = [t for t in temps if t is not None]
     if temps:
         tmin, tmax = min(temps), max(temps)
@@ -160,23 +180,37 @@ def _fallback_plan(forecast: dict) -> str:
     rain = max(pops) if pops else 0.0
 
     tip_m = "Light layer and sunglasses." if (tmax or 20) >= 20 else "Warm layer."
-    tip_a = "Carry a compact umbrella." if rain >= 0.3 else "Hydrate and take shade breaks."
-    tip_e = "Light jacket if it cools down." if (tmin or 16) <= 18 else "Evening should be mild."
+    tip_a = (
+        "Carry a compact umbrella." if rain >= 0.3 else "Hydrate and take shade breaks."
+    )
+    tip_e = (
+        "Light jacket if it cools down."
+        if (tmin or 16) <= 18
+        else "Evening should be mild."
+    )
 
-    rng = f"{int(round(tmin))}–{int(round(tmax))}°" if tmin is not None and tmax is not None else "—"
+    rng = (
+        f"{int(round(tmin))}–{int(round(tmax))}°"
+        if tmin is not None and tmax is not None
+        else "—"
+    )
     return (
         f"Morning: Start easy. {tip_m}\n"
         f"Afternoon: Peak around {rng}. {tip_a}\n"
         f"Evening: {tip_e}"
     )
 
+
 async def ask_text_llm(question: str, forecast: dict) -> str:
     try:
-        snippet = json.dumps({
-            "current": forecast.get("current", {}),
-            "hourly": forecast.get("hourly", [])[:6],
-            "daily": forecast.get("daily", [])[:1],
-        }, indent=2)
+        snippet = json.dumps(
+            {
+                "current": forecast.get("current", {}),
+                "hourly": forecast.get("hourly", [])[:6],
+                "daily": forecast.get("daily", [])[:1],
+            },
+            indent=2,
+        )
         prompt = TEXT_QA_PROMPT.format(question=question, snippet=snippet)
         resp = openai_client.chat.completions.create(
             model="gpt-4.1-mini",
@@ -192,12 +226,16 @@ async def ask_text_llm(question: str, forecast: dict) -> str:
     except Exception:
         return _fallback_text_answer(question, forecast)
 
+
 async def plan_my_day_llm(forecast: dict) -> str:
     try:
-        snippet = json.dumps({
-            "hourly": forecast.get("hourly", [])[:12],
-            "daily": forecast.get("daily", [])[:1],
-        }, indent=2)
+        snippet = json.dumps(
+            {
+                "hourly": forecast.get("hourly", [])[:12],
+                "daily": forecast.get("daily", [])[:1],
+            },
+            indent=2,
+        )
         prompt = f"{PLAN_MY_DAY_PROMPT}\n\nJSON:\n{snippet}"
         resp = openai_client.chat.completions.create(
             model="gpt-4.1-mini",
@@ -213,10 +251,12 @@ async def plan_my_day_llm(forecast: dict) -> str:
     except Exception:
         return _fallback_plan(forecast)
 
+
 # -------------------- Routes --------------------
 @app.get("/api/health")
 async def health():
     return {"ok": True, "ts": datetime.utcnow().isoformat()}
+
 
 @app.post("/api/forecast")
 async def api_forecast(req: WxRequest):
@@ -229,6 +269,7 @@ async def api_forecast(req: WxRequest):
         raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
     return {"lat": lat, "lon": lon, "units": units, "forecast": data}
 
+
 @app.post("/api/ask")
 async def api_ask(req: QARequest):
     lat = req.lat or DEFAULT_LAT
@@ -237,6 +278,7 @@ async def api_ask(req: QARequest):
     forecast = await fetch_forecast(lat, lon, units)
     answer = await ask_text_llm(req.question, forecast)
     return {"answer": answer}
+
 
 @app.post("/api/plan")
 async def api_plan(req: Optional[WxRequest] = Body(default=None)):
@@ -250,9 +292,10 @@ async def api_plan(req: Optional[WxRequest] = Body(default=None)):
     plan = await plan_my_day_llm(forecast)
     return {"plan": plan}
 
+
 @app.post("/api/nowcast")
 async def api_nowcast(image: UploadFile = File(...)):
     raw = await image.read()
     b64 = base64.b64encode(raw).decode("utf-8")
-    description = await describe_image(b64)   # <-- Gemini provider
+    description = await describe_image(b64)  # <-- Gemini provider
     return {"vision_nowcast": description}
