@@ -1,6 +1,5 @@
 """Gemini-based VLM helper (uses gemini-1.5-flash for images)."""
 
-from __future__ import annotations
 import os, base64
 from dotenv import load_dotenv
 
@@ -11,9 +10,7 @@ from .prompts import SYSTEM_VISION_ASSISTANT, VISION_PROMPT
 import google.generativeai as genai
 from google.api_core.exceptions import ResourceExhausted
 
-# Load env from backend/.env (works no matter where you run from)
-HERE = os.path.dirname(__file__)
-load_dotenv(dotenv_path=os.path.join(HERE, ".env"), override=False)
+load_dotenv()
 
 
 def _setup_gemini():
@@ -21,7 +18,6 @@ def _setup_gemini():
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not set. Put it in backend/.env")
     genai.configure(api_key=api_key)
-    # 1.5 Flash = fast & cheap; you can swap to "gemini-1.5-pro"
     return genai.GenerativeModel("gemini-1.5-flash")
 
 
