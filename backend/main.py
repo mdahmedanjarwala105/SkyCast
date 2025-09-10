@@ -1,5 +1,3 @@
-# backend/main.py
-from __future__ import annotations
 import os, json, base64
 from datetime import datetime
 from typing import Optional
@@ -8,15 +6,14 @@ import httpx
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from dotenv import load_dotenv
 
 from .prompts import SYSTEM_TEXT_ASSISTANT, TEXT_QA_PROMPT, PLAN_MY_DAY_PROMPT
 from .vision_providers import describe_image  # <-- Gemini provider
 from openai import OpenAI, RateLimitError
 
-# --- Always load env from backend/.env (works no matter where you run from)
-HERE = os.path.dirname(__file__)
-load_dotenv(dotenv_path=os.path.join(HERE, ".env"), override=False)
+from dotenv import load_dotenv
+
+load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEFAULT_LAT = float(os.getenv("DEFAULT_LAT", 40.7357))
@@ -26,7 +23,7 @@ DEFAULT_UNITS = os.getenv("DEFAULT_UNITS", "metric")
 if not OPENAI_API_KEY:
     raise RuntimeError("Set OPENAI_API_KEY in backend/.env")
 
-# FastAPI app ---------------------------------------------------------
+# FastAPI app
 app = FastAPI(title="SkyCast API (Open-Meteo + OpenAI text + Gemini vision)")
 app.add_middleware(
     CORSMiddleware,
@@ -54,16 +51,16 @@ def root():
 
 
 class WxRequest(BaseModel):
-    lat: Optional[float] = None
-    lon: Optional[float] = None
-    units: Optional[str] = None  # "metric" or "imperial"
+    lat = None
+    lon = None
+    units = None  # "metric" or "imperial"
 
 
 class QARequest(WxRequest):
     question: str
 
 
-# -------------------- Forecast via Open-Meteo (no key) --------------------
+# Forecast via Open-Meteo
 async def fetch_forecast(lat: float, lon: float, units: str):
     """
     Map Open-Meteo response into our simple schema used by prompts:
@@ -74,7 +71,6 @@ async def fetch_forecast(lat: float, lon: float, units: str):
     temp_unit = "fahrenheit" if units == "imperial" else "celsius"
     wind_unit = "mph" if units == "imperial" else "kmh"
 
-    url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat,
         "longitude": lon,
@@ -85,6 +81,8 @@ async def fetch_forecast(lat: float, lon: float, units: str):
         "windspeed_unit": wind_unit,
         "timezone": "auto",
     }
+
+    url = "https://api.open-meteo.com/v1/forecast"
 
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.get(url, params=params)
@@ -134,7 +132,7 @@ async def fetch_forecast(lat: float, lon: float, units: str):
     return {"current": current, "hourly": hourly, "daily": daily}
 
 
-# -------------------- OpenAI text models w/ safe fallbacks --------------------
+# OpenAI text models w/ safe fallbacks
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 
@@ -252,7 +250,7 @@ async def plan_my_day_llm(forecast: dict) -> str:
         return _fallback_plan(forecast)
 
 
-# -------------------- Routes --------------------
+# Routes
 @app.get("/api/health")
 async def health():
     return {"ok": True, "ts": datetime.utcnow().isoformat()}
