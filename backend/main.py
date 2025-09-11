@@ -1,4 +1,4 @@
-import os, json, base64
+import os, json, re
 from datetime import datetime
 from typing import Optional
 
@@ -6,12 +6,12 @@ import httpx
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+from openai import OpenAI
 
 from .prompts import SYSTEM_TEXT_ASSISTANT, TEXT_QA_PROMPT, PLAN_MY_DAY_PROMPT
-from .vision_providers import describe_image  # <-- Gemini provider
-from openai import OpenAI, RateLimitError
-
-from dotenv import load_dotenv
+from .vision_providers import describe_image
 
 load_dotenv()
 
@@ -23,7 +23,6 @@ DEFAULT_UNITS = os.getenv("DEFAULT_UNITS", "metric")
 if not OPENAI_API_KEY:
     raise RuntimeError("Set OPENAI_API_KEY in backend/.env")
 
-# FastAPI app
 app = FastAPI(title="SkyCast API (Open-Meteo + OpenAI text + Gemini vision)")
 app.add_middleware(
     CORSMiddleware,
@@ -34,40 +33,57 @@ app.add_middleware(
 )
 
 
-# Friendly home so '/' doesn’t 404
-@app.get("/")
-def root():
-    return {
-        "status": "ok",
-        "try": [
-            "/api/health",
-            "/docs",
-            "/api/forecast (POST)",
-            "/api/ask (POST)",
-            "/api/plan (POST)",
-            "/api/nowcast (POST)",
-        ],
-    }
-
-
+# ---------------- Models ----------------
 class WxRequest(BaseModel):
-    lat = None
-    lon = None
-    units = None  # "metric" or "imperial"
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    units: Optional[str] = None  # "metric" or "imperial"
+    place: Optional[str] = None  # optional plain-language place name
 
 
 class QARequest(WxRequest):
     question: str
 
 
-# Forecast via Open-Meteo
+# ---------------- Geocoding helpers ----------------
+async def geocode_place(place: str) -> Optional[tuple[float, float]]:
+    """
+    Resolve a place name to (lat, lon) using Open-Meteo geocoding.
+    Returns None if not found/errors.
+    """
+    if not place:
+        return None
+    url = "https://geocoding-api.open-meteo.com/v1/search"
+    params = {"name": place, "count": 1, "language": "en", "format": "json"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(url, params=params)
+            r.raise_for_status()
+            data = r.json()
+        if data.get("results"):
+            res = data["results"][0]
+            return float(res["latitude"]), float(res["longitude"])
+    except Exception:
+        return None
+    return None
+
+
+def extract_place_from_question(q: str) -> Optional[str]:
+    """
+    Grab trailing 'in <place>' from the question, e.g.:
+      'Should I take umbrella at 7PM in Mumbai?'
+      'Rain in New York tonight'
+    """
+    if not q:
+        return None
+    m = re.search(
+        r"\bin\s+([A-Za-z][A-Za-z\s\.\-\,]+?)\s*[\?\.\!]*$", q.strip(), re.IGNORECASE
+    )
+    return m.group(1).strip() if m else None
+
+
+# ---------------- Forecast via Open-Meteo ----------------
 async def fetch_forecast(lat: float, lon: float, units: str):
-    """
-    Map Open-Meteo response into our simple schema used by prompts:
-      current: temp, weather.main
-      hourly:  dt (index), temp, pop [0-1]
-      daily:   temp.min/max, pop [0-1]
-    """
     temp_unit = "fahrenheit" if units == "imperial" else "celsius"
     wind_unit = "mph" if units == "imperial" else "kmh"
 
@@ -81,9 +97,7 @@ async def fetch_forecast(lat: float, lon: float, units: str):
         "windspeed_unit": wind_unit,
         "timezone": "auto",
     }
-
     url = "https://api.open-meteo.com/v1/forecast"
-
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.get(url, params=params)
         r.raise_for_status()
@@ -109,13 +123,7 @@ async def fetch_forecast(lat: float, lon: float, units: str):
     temps = om.get("hourly", {}).get("temperature_2m", []) or []
     pops = om.get("hourly", {}).get("precipitation_probability", []) or []
     for i in range(min(len(times), len(temps))):
-        hourly.append(
-            {
-                "dt": i,
-                "temp": temps[i],
-                "pop": (pops[i] or 0) / 100.0,
-            }
-        )
+        hourly.append({"dt": i, "temp": temps[i], "pop": (pops[i] or 0) / 100.0})
 
     daily = []
     tmax = om.get("daily", {}).get("temperature_2m_max", []) or []
@@ -123,16 +131,13 @@ async def fetch_forecast(lat: float, lon: float, units: str):
     popd = om.get("daily", {}).get("precipitation_probability_max", []) or []
     for i in range(min(len(tmax), len(tmin))):
         daily.append(
-            {
-                "temp": {"min": tmin[i], "max": tmax[i]},
-                "pop": (popd[i] or 0) / 100.0,
-            }
+            {"temp": {"min": tmin[i], "max": tmax[i]}, "pop": (popd[i] or 0) / 100.0}
         )
 
     return {"current": current, "hourly": hourly, "daily": daily}
 
 
-# OpenAI text models w/ safe fallbacks
+# ---------------- OpenAI text LLM (with fallbacks) ----------------
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 
@@ -142,21 +147,24 @@ def _fallback_text_answer(question: str, forecast: dict) -> str:
     t = cur.get("temp")
     pops = [h.get("pop", 0.0) or 0.0 for h in hourly[:6]]
     max_pop = max(pops) if pops else 0.0
-
-    rain_msg = (
-        "Likely rain in the next few hours—carry an umbrella. ☔"
-        if max_pop >= 0.5
-        else (
+    if max_pop >= 0.5:
+        rain_msg = "Likely rain in the next few hours—carry an umbrella. ☔"
+    elif max_pop >= 0.2:
+        rain_msg = (
             "There’s a small chance of light showers—consider a compact umbrella. 🌦️"
-            if max_pop >= 0.2
-            else "Rain is unlikely in the next few hours. 🙂"
         )
+    else:
+        rain_msg = "Rain is unlikely in the next few hours. 🙂"
+    unit = (
+        "F"
+        if (
+            forecast
+            and isinstance(forecast, dict)
+            and os.getenv("DEFAULT_UNITS") == "imperial"
+        )
+        else "C"
     )
-    temp_msg = (
-        f" Current temp: {t}°{'F' if DEFAULT_UNITS=='imperial' else 'C'}."
-        if t is not None
-        else ""
-    )
+    temp_msg = f" Current temp: {t}°{unit}." if t is not None else ""
     return f"{rain_msg}{temp_msg}"
 
 
@@ -176,7 +184,6 @@ def _fallback_plan(forecast: dict) -> str:
         tmin = tmax = None
     pops = [h.get("pop", 0.0) or 0.0 for h in hourly[:12]]
     rain = max(pops) if pops else 0.0
-
     tip_m = "Light layer and sunglasses." if (tmax or 20) >= 20 else "Warm layer."
     tip_a = (
         "Carry a compact umbrella." if rain >= 0.3 else "Hydrate and take shade breaks."
@@ -186,17 +193,12 @@ def _fallback_plan(forecast: dict) -> str:
         if (tmin or 16) <= 18
         else "Evening should be mild."
     )
-
     rng = (
         f"{int(round(tmin))}–{int(round(tmax))}°"
         if tmin is not None and tmax is not None
         else "—"
     )
-    return (
-        f"Morning: Start easy. {tip_m}\n"
-        f"Afternoon: Peak around {rng}. {tip_a}\n"
-        f"Evening: {tip_e}"
-    )
+    return f"Morning: Start easy. {tip_m}\nAfternoon: Peak around {rng}. {tip_a}\nEvening: {tip_e}"
 
 
 async def ask_text_llm(question: str, forecast: dict) -> str:
@@ -218,9 +220,7 @@ async def ask_text_llm(question: str, forecast: dict) -> str:
             ],
             temperature=0.2,
         )
-        return resp.choices[0].message.content.strip()
-    except RateLimitError:
-        return _fallback_text_answer(question, forecast)
+        return (resp.choices[0].message.content or "").strip()
     except Exception:
         return _fallback_text_answer(question, forecast)
 
@@ -243,57 +243,65 @@ async def plan_my_day_llm(forecast: dict) -> str:
             ],
             temperature=0.2,
         )
-        return resp.choices[0].message.content.strip()
-    except RateLimitError:
-        return _fallback_plan(forecast)
+        return (resp.choices[0].message.content or "").strip()
     except Exception:
         return _fallback_plan(forecast)
 
 
-# Routes
+# ---------------- Routes ----------------
 @app.get("/api/health")
 async def health():
     return {"ok": True, "ts": datetime.utcnow().isoformat()}
 
 
-@app.post("/api/forecast")
-async def api_forecast(req: WxRequest):
-    lat = req.lat or DEFAULT_LAT
-    lon = req.lon or DEFAULT_LON
-    units = req.units or DEFAULT_UNITS
-    try:
-        data = await fetch_forecast(lat, lon, units)
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
-    return {"lat": lat, "lon": lon, "units": units, "forecast": data}
-
-
 @app.post("/api/ask")
 async def api_ask(req: QARequest):
-    lat = req.lat or DEFAULT_LAT
-    lon = req.lon or DEFAULT_LON
+    # Priority: explicit lat/lon > explicit place > place extracted from question > defaults
+    lat, lon = req.lat, req.lon
+    place = req.place or extract_place_from_question(req.question)
+
+    if (lat is None or lon is None) and place:
+        coords = await geocode_place(place)
+        if coords:
+            lat, lon = coords
+
+    lat = lat or DEFAULT_LAT
+    lon = lon or DEFAULT_LON
     units = req.units or DEFAULT_UNITS
-    forecast = await fetch_forecast(lat, lon, units)
+
+    try:
+        forecast = await fetch_forecast(lat, lon, units)
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
     answer = await ask_text_llm(req.question, forecast)
-    return {"answer": answer}
+    return {"answer": answer, "lat": lat, "lon": lon, "resolved_place": place}
 
 
 @app.post("/api/plan")
 async def api_plan(req: Optional[WxRequest] = Body(default=None)):
-    # Allow calling without a body
     if req is None:
         req = WxRequest()
-    lat = req.lat or DEFAULT_LAT
-    lon = req.lon or DEFAULT_LON
+
+    lat, lon = req.lat, req.lon
+    if (lat is None or lon is None) and req.place:
+        coords = await geocode_place(req.place)
+        if coords:
+            lat, lon = coords
+
+    lat = lat or DEFAULT_LAT
+    lon = lon or DEFAULT_LON
     units = req.units or DEFAULT_UNITS
-    forecast = await fetch_forecast(lat, lon, units)
+
+    try:
+        forecast = await fetch_forecast(lat, lon, units)
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
     plan = await plan_my_day_llm(forecast)
-    return {"plan": plan}
+    return {"plan": plan, "lat": lat, "lon": lon, "resolved_place": req.place}
 
 
 @app.post("/api/nowcast")
 async def api_nowcast(image: UploadFile = File(...)):
     raw = await image.read()
-    b64 = base64.b64encode(raw).decode("utf-8")
-    description = await describe_image(b64)  # <-- Gemini provider
+    description = await describe_image(raw)
     return {"vision_nowcast": description}
