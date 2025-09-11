@@ -1,101 +1,129 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
-<head>
+  <head>
     <meta charset="utf-8" />
     <title>🌤️ SkyCast</title>
     <style>
-        body {
+      body {
         font-family: sans-serif;
         max-width: 800px;
         margin: 20px auto;
         padding: 0 12px;
         background-color: #111;
         color: #eee;
-        }
-        .card {
+      }
+      .card {
         border: 1px solid #444;
         border-radius: 8px;
         padding: 12px;
         margin: 10px 0;
         background-color: #1a1a1a;
-        }
-        pre { white-space: pre-wrap; }
-        button {
+      }
+      pre {
+        white-space: pre-wrap;
+      }
+      button {
         cursor: pointer;
         margin-top: 6px;
-        }
-        input {
+      }
+      input {
         background: #222;
         color: #eee;
         border: 1px solid #555;
         border-radius: 4px;
         padding: 4px 6px;
-        }
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <h1>🌤️ SkyCast</h1>
 
     <!-- Ask a Question -->
     <div class="card">
-        <h3>Ask a question</h3>
-        <input id="q" placeholder="Umbrella at 6 PM in Mumbai?" style="width:70%">
-        <button onclick="ask()">Ask</button>
-        <div id="answer"></div>
+      <h3>Ask a question</h3>
+      <input
+        id="q"
+        placeholder="Umbrella at 6 PM in Mumbai?"
+        style="width: 70%"
+      />
+      <button onclick="ask()">Ask</button>
+      <div id="answer"></div>
     </div>
 
     <!-- Plan My Day -->
     <div class="card">
-        <h3>Plan my day</h3>
-        <input id="planPlace" placeholder="Location (optional, e.g., Mumbai)" style="width:70%">
-        <button onclick="plan()">Generate plan</button>
-        <div id="plan"></div>
+      <h3>Plan my day</h3>
+      <input
+        id="planPlace"
+        placeholder="Location (optional, e.g., Mumbai)"
+        style="width: 70%"
+      />
+      <button onclick="plan()">Generate plan</button>
+      <div id="plan"></div>
     </div>
 
     <!-- Visual Nowcast -->
     <div class="card">
-        <h3>Visual nowcast</h3>
-        <input id="img" type="file" accept="image/*">
-        <button onclick="nowcast()">Analyze</button>
-        <div id="vision"></div>
+      <h3>Visual nowcast</h3>
+      <input id="img" type="file" accept="image/*" />
+      <button onclick="nowcast()">Analyze</button>
+      <div id="vision"></div>
     </div>
 
-<script>
-const API='http://localhost:8000';
+    <script>
+      const API = "http://localhost:8000";
 
-async function ask(){
-  const q=document.getElementById('q').value.trim();
-  if(!q){alert('Type a question');return;}
-  const r=await fetch(`${API}/api/ask`,{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:q})
-  });
-  const j=await r.json();
-  document.getElementById('answer').innerHTML=`<pre>${j.answer||'—'}</pre>`;
-}
+      async function ask() {
+        const q = document.getElementById("q").value.trim();
+        if (!q) {
+          alert("Type a question");
+          return;
+        }
+        const r = await fetch(`${API}/api/ask`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: q }),
+        });
+        const j = await r.json();
+        document.getElementById("answer").innerHTML = `<pre>${
+          j.answer || "—"
+        }</pre>`;
+      }
 
-async function plan(){
-  const place = document.getElementById('planPlace').value.trim();
-  const body = place ? { place } : {};
-  const r=await fetch(`${API}/api/plan`,{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(body)
-  });
-  const j=await r.json();
-  const tag = j.resolved_place ? `\n\n(Location: ${j.resolved_place})` : '';
-  document.getElementById('plan').innerHTML = `<pre>${(j.plan||'—')}${tag}</pre>`;
-}
+      async function plan() {
+        const place = document.getElementById("planPlace").value.trim();
+        const body = place ? { place } : {};
+        const r = await fetch(`${API}/api/plan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const j = await r.json();
+        const tag = j.resolved_place
+          ? `\n\n(Location: ${j.resolved_place})`
+          : "";
+        document.getElementById("plan").innerHTML = `<pre>${
+          j.plan || "—"
+        }${tag}</pre>`;
+      }
 
-async function nowcast(){
-  const f=document.getElementById('img').files[0];
-  if(!f){alert('Pick an image');return;}
-  const fd=new FormData(); fd.append('image',f);
-  const r=await fetch(`${API}/api/nowcast`,{method:'POST',body:fd});
-  const j=await r.json();
-  document.getElementById('vision').innerHTML=`<pre>${j.vision_nowcast||'—'}</pre>`;
-}
-</script>
-</body>
+      async function nowcast() {
+        const f = document.getElementById("img").files[0];
+        if (!f) {
+          alert("Pick an image");
+          return;
+        }
+        const fd = new FormData();
+        fd.append("image", f);
+        const r = await fetch(`${API}/api/nowcast`, {
+          method: "POST",
+          body: fd,
+        });
+        const j = await r.json();
+        document.getElementById("vision").innerHTML = `<pre>${
+          j.vision_nowcast || "—"
+        }</pre>`;
+      }
+    </script>
+  </body>
 </html>
