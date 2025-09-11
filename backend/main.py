@@ -1,6 +1,5 @@
 import os, json, re
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body
@@ -35,10 +34,10 @@ app.add_middleware(
 
 # ---------------- Models ----------------
 class WxRequest(BaseModel):
-    lat: Optional[float] = None
-    lon: Optional[float] = None
-    units: Optional[str] = None  # "metric" or "imperial"
-    place: Optional[str] = None  # optional plain-language place name
+    lat = None
+    lon = None
+    units = None  # "metric" or "imperial"
+    place = None  # optional plain-language place name
 
 
 class QARequest(WxRequest):
@@ -46,7 +45,7 @@ class QARequest(WxRequest):
 
 
 # ---------------- Geocoding helpers ----------------
-async def geocode_place(place: str) -> Optional[tuple[float, float]]:
+async def geocode_place(place: str):
     """
     Resolve a place name to (lat, lon) using Open-Meteo geocoding.
     Returns None if not found/errors.
@@ -68,7 +67,7 @@ async def geocode_place(place: str) -> Optional[tuple[float, float]]:
     return None
 
 
-def extract_place_from_question(q: str) -> Optional[str]:
+def extract_place_from_question(q: str):
     """
     Grab trailing 'in <place>' from the question, e.g.:
       'Should I take umbrella at 7PM in Mumbai?'
@@ -194,7 +193,7 @@ def _fallback_plan(forecast: dict) -> str:
         else "Evening should be mild."
     )
     rng = (
-        f"{int(round(tmin))}–{int(round(tmax))}°"
+        f"{int(round(tmin))}-{int(round(tmax))}°"
         if tmin is not None and tmax is not None
         else "—"
     )
@@ -251,7 +250,7 @@ async def plan_my_day_llm(forecast: dict) -> str:
 # ---------------- Routes ----------------
 @app.get("/api/health")
 async def health():
-    return {"ok": True, "ts": datetime.utcnow().isoformat()}
+    return {"ok": True, "ts": datetime.now(timezone.utc).isoformat()}
 
 
 @app.post("/api/ask")
@@ -278,7 +277,7 @@ async def api_ask(req: QARequest):
 
 
 @app.post("/api/plan")
-async def api_plan(req: Optional[WxRequest] = Body(default=None)):
+async def api_plan(req: WxRequest = Body(default=None)):
     if req is None:
         req = WxRequest()
 
