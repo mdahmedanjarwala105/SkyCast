@@ -15,8 +15,7 @@ from .vision_providers import describe_image
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-DEFAULT_LAT = float(os.getenv("DEFAULT_LAT", 40.7357))
-DEFAULT_LON = float(os.getenv("DEFAULT_LON", -74.1724))
+DEFAULT_PLACE = os.getenv("DEFAULT_PLACE", "New York, NY")
 DEFAULT_UNITS = os.getenv("DEFAULT_UNITS", "metric")
 
 if not OPENAI_API_KEY:
@@ -34,10 +33,8 @@ app.add_middleware(
 
 # ---------------- Models ----------------
 class WxRequest(BaseModel):
-    lat = None
-    lon = None
-    units = None  # "metric" or "imperial"
-    place = None  # optional plain-language place name
+    units: str | None = None  # "metric" or "imperial"
+    place: str | None = None  # plain-language place name
 
 
 class QARequest(WxRequest):
@@ -61,7 +58,7 @@ async def geocode_place(place: str):
             data = r.json()
         if data.get("results"):
             res = data["results"][0]
-            return float(res["latitude"]), float(res["longitude"])
+            return float(res["latitude"]), float(res["longitude"]), res["name"]
     except Exception:
         return None
     return None
@@ -69,9 +66,9 @@ async def geocode_place(place: str):
 
 def extract_place_from_question(q: str):
     """
-    Grab trailing 'in <place>' from the question, e.g.:
-      'Should I take umbrella at 7PM in Mumbai?'
-      'Rain in New York tonight'
+    Grab trailing 'in <place>' from the question.
+    E.g.: 'Should I take umbrella at 7PM in Mumbai?'
+          'Rain in New York tonight'
     """
     if not q:
         return None
@@ -150,19 +147,11 @@ def _fallback_text_answer(question: str, forecast: dict) -> str:
         rain_msg = "Likely rain in the next few hours—carry an umbrella. ☔"
     elif max_pop >= 0.2:
         rain_msg = (
-            "There’s a small chance of light showers—consider a compact umbrella. 🌦️"
+            "There's a small chance of light showers—consider a compact umbrella. 🌦️"
         )
     else:
         rain_msg = "Rain is unlikely in the next few hours. 🙂"
-    unit = (
-        "F"
-        if (
-            forecast
-            and isinstance(forecast, dict)
-            and os.getenv("DEFAULT_UNITS") == "imperial"
-        )
-        else "C"
-    )
+    unit = "F" if os.getenv("DEFAULT_UNITS") == "imperial" else "C"
     temp_msg = f" Current temp: {t}°{unit}." if t is not None else ""
     return f"{rain_msg}{temp_msg}"
 
@@ -255,25 +244,23 @@ async def health():
 
 @app.post("/api/ask")
 async def api_ask(req: QARequest):
-    # Priority: explicit lat/lon > explicit place > place extracted from question > defaults
-    lat, lon = req.lat, req.lon
-    place = req.place or extract_place_from_question(req.question)
+    place = req.place or extract_place_from_question(req.question) or DEFAULT_PLACE
+    coords = await geocode_place(place)
+    if coords:
+        lat, lon, resolved_name = coords
+    else:
+        raise HTTPException(
+            status_code=404, detail=f"Could not resolve place '{place}'"
+        )
 
-    if (lat is None or lon is None) and place:
-        coords = await geocode_place(place)
-        if coords:
-            lat, lon = coords
-
-    lat = lat or DEFAULT_LAT
-    lon = lon or DEFAULT_LON
     units = req.units or DEFAULT_UNITS
-
     try:
         forecast = await fetch_forecast(lat, lon, units)
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+
     answer = await ask_text_llm(req.question, forecast)
-    return {"answer": answer, "lat": lat, "lon": lon, "resolved_place": place}
+    return {"answer": answer, "resolved_place": resolved_name}
 
 
 @app.post("/api/plan")
@@ -281,22 +268,23 @@ async def api_plan(req: WxRequest = Body(default=None)):
     if req is None:
         req = WxRequest()
 
-    lat, lon = req.lat, req.lon
-    if (lat is None or lon is None) and req.place:
-        coords = await geocode_place(req.place)
-        if coords:
-            lat, lon = coords
+    place = req.place or DEFAULT_PLACE
+    coords = await geocode_place(place)
+    if coords:
+        lat, lon, resolved_name = coords
+    else:
+        raise HTTPException(
+            status_code=404, detail=f"Could not resolve place '{place}'"
+        )
 
-    lat = lat or DEFAULT_LAT
-    lon = lon or DEFAULT_LON
     units = req.units or DEFAULT_UNITS
-
     try:
         forecast = await fetch_forecast(lat, lon, units)
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+
     plan = await plan_my_day_llm(forecast)
-    return {"plan": plan, "lat": lat, "lon": lon, "resolved_place": req.place}
+    return {"plan": plan, "resolved_place": resolved_name}
 
 
 @app.post("/api/nowcast")
