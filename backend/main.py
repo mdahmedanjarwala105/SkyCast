@@ -33,12 +33,12 @@ app.add_middleware(
 
 # ---------------- Models ----------------
 class WxRequest(BaseModel):
-    units: str | None = None  # "metric" or "imperial"
-    place: str | None = None  # plain-language place name
+    units = None  # "metric" or "imperial"
+    place = None  # plain-language place name
 
 
 class QARequest(WxRequest):
-    question: str
+    question = None
 
 
 # ---------------- Geocoding helpers ----------------
