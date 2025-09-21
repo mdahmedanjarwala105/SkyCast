@@ -35,7 +35,6 @@ app.add_middleware(
 
 # ---------------- Models ----------------
 class WxRequest(BaseModel):
-    units: Optional[Literal["metric", "imperial"]] = None  # "metric" or "imperial"
     place: Optional[str] = None  # plain-language place name
 
 
@@ -237,7 +236,7 @@ async def health():
 
 @app.post("/api/ask")
 async def api_ask(req: QARequest):
-    place = req.place or extract_place_from_question(req.question) or DEFAULT_PLACE
+    place = extract_place_from_question(req.question) or DEFAULT_PLACE
     coords = await geocode_place(place)
     if coords:
         lat, lon, resolved_name = coords
@@ -245,10 +244,8 @@ async def api_ask(req: QARequest):
         raise HTTPException(
             status_code=404, detail=f"Could not resolve place '{place}'"
         )
-
-    units = req.units or DEFAULT_UNITS
     try:
-        forecast = await fetch_forecast(lat, lon, units)
+        forecast = await fetch_forecast(lat, lon, DEFAULT_UNITS)
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
 
@@ -269,10 +266,8 @@ async def api_plan(req: WxRequest = Body(default=None)):
         raise HTTPException(
             status_code=404, detail=f"Could not resolve place '{place}'"
         )
-
-    units = req.units or DEFAULT_UNITS
     try:
-        forecast = await fetch_forecast(lat, lon, units)
+        forecast = await fetch_forecast(lat, lon, DEFAULT_UNITS)
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
 
