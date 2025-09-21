@@ -168,6 +168,12 @@ def _fallback_plan(forecast: dict) -> str:
         temps = [t for t in temps if t is not None]
     if temps:
         tmin, tmax = min(temps), max(temps)
+        if tmin == tmax:
+            range = f"{int(round(tmin))}°"
+        elif tmin != tmax:
+            range = f"{int(round(tmin))}-{int(round(tmax))}°"
+        else:
+            range = "-"
     else:
         tmin = tmax = None
     pops = [h.get("pop", 0.0) or 0.0 for h in hourly[:12]]
@@ -181,12 +187,7 @@ def _fallback_plan(forecast: dict) -> str:
         if (tmin or 16) <= 18
         else "Evening should be mild."
     )
-    rng = (
-        f"{int(round(tmin))}-{int(round(tmax))}°"
-        if tmin is not None and tmax is not None
-        else "—"
-    )
-    return f"Morning: Start easy. {tip_m}\nAfternoon: Peak around {rng}. {tip_a}\nEvening: {tip_e}"
+    return f"Morning: Start easy. {tip_m}\nAfternoon: Peak around {range}. {tip_a}\nEvening: {tip_e}"
 
 
 async def ask_text_llm(question: str, forecast: dict) -> str:
