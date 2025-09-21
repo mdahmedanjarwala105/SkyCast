@@ -138,7 +138,7 @@ def _fallback_text_answer(forecast: dict) -> str:
     else:
         rain_msg = "Rain is unlikely in the next few hours. 🙂"
     unit = "F" if os.getenv("DEFAULT_UNITS") == "imperial" else "C"
-    temp_msg = f" Current temp: {t}°{unit}." if t is not None else ""
+    temp_msg = f" Current temp: {int(round(t))}°{unit}." if t is not None else ""
     return f"{rain_msg}{temp_msg}"
 
 
