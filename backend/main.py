@@ -100,17 +100,6 @@ async def fetch_forecast(lat: float, lon: float, units: str):
         om = r.json()
 
     cur_temp = om.get("current", {}).get("temperature_2m")
-    cloud = om.get("current", {}).get("cloud_cover") or 0
-    precip = om.get("current", {}).get("precipitation") or 0.0
-
-    if precip > 0.1:
-        main = "Rain"
-    elif cloud > 60:
-        main = "Clouds"
-    elif cloud > 20:
-        main = "Partly Cloudy"
-    else:
-        main = "Clear"
 
     current = {"temp": cur_temp}
 
@@ -124,7 +113,6 @@ async def fetch_forecast(lat: float, lon: float, units: str):
     daily = []
     tmax = om.get("daily", {}).get("temperature_2m_max", []) or []
     tmin = om.get("daily", {}).get("temperature_2m_min", []) or []
-    popd = om.get("daily", {}).get("precipitation_probability_max", []) or []
     for i in range(min(len(tmax), len(tmin))):
         daily.append({"temp": {"min": tmin[i], "max": tmax[i]}})
 
