@@ -137,7 +137,7 @@ async def fetch_forecast(lat: float, lon: float, units: str):
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 
-def _fallback_text_answer(question: str, forecast: dict) -> str:
+def _fallback_text_answer(forecast: dict) -> str:
     cur = forecast.get("current", {}) or {}
     hourly = forecast.get("hourly", []) or []
     t = cur.get("temp")
