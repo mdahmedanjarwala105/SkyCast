@@ -165,10 +165,10 @@ def _fallback_plan(forecast: dict) -> str:
         range = "-"
 
     pops = [h.get("pop", 0.0) or 0.0 for h in hourly[:12]]
-    rain = max(pops) if pops else 0.0
+    max_pop = max(pops) if pops else 0.0
     tip_m = "Light layer and sunglasses." if (tmax or 20) >= 20 else "Warm layer."
     tip_a = (
-        "Carry a compact umbrella." if rain >= 0.3 else "Hydrate and take shade breaks."
+        "Carry a compact umbrella." if max_pop >= 0.3 else "Hydrate and take shade breaks."
     )
     tip_e = (
         "Light jacket if it cools down."
