@@ -42,7 +42,7 @@ class QARequest(WxRequest):
 
 
 # ---------------- Geocoding helpers ----------------
-async def geocode_place(place: str):  # ------------------------------------------------
+async def geocode_place(place: str):
     """
     Resolve a place name to (lat, lon) using Open-Meteo geocoding.
     Returns None if not found/errors.
@@ -64,7 +64,7 @@ async def geocode_place(place: str):  # ----------------------------------------
     return None
 
 
-def extract_place_from_question(q: str):  # --------------------------------------------
+def extract_place_from_question(q: str):
     """
     Grab trailing 'in <place>' from the question.
     E.g.: 'Should I take umbrella at 7PM in Mumbai?'
@@ -79,9 +79,7 @@ def extract_place_from_question(q: str):  # ------------------------------------
 
 
 # ---------------- Forecast via Open-Meteo ----------------
-async def fetch_forecast(
-    lat: float, lon: float, units: str
-):  # ------------------------
+async def fetch_forecast(lat: float, lon: float, units: str):
     temp_unit = "fahrenheit" if units == "imperial" else "celsius"
     wind_unit = "mph" if units == "imperial" else "kmh"
 
