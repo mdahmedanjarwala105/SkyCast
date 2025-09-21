@@ -154,14 +154,16 @@ def _fallback_plan(forecast: dict) -> str:
         temps = [t for t in temps if t is not None]
     if temps:
         tmin, tmax = min(temps), max(temps)
-        if tmin == tmax:
-            range = f"{int(round(tmin))}°"
-        elif tmin != tmax:
-            range = f"{int(round(tmin))}-{int(round(tmax))}°"
-        else:
-            range = "-"
     else:
         tmin = tmax = None
+
+    if tmin == tmax:
+        range = f"{int(round(tmin))}°"
+    elif tmin != tmax:
+        range = f"{int(round(tmin))}-{int(round(tmax))}°"
+    elif tmin is None and tmax is None:
+        range = "-"
+
     pops = [h.get("pop", 0.0) or 0.0 for h in hourly[:12]]
     rain = max(pops) if pops else 0.0
     tip_m = "Light layer and sunglasses." if (tmax or 20) >= 20 else "Warm layer."
