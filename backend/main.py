@@ -12,6 +12,8 @@ from openai import OpenAI
 from .prompts import SYSTEM_TEXT_ASSISTANT, TEXT_QA_PROMPT, PLAN_MY_DAY_PROMPT
 from .vision_providers import describe_image
 
+from typing import Optional, Literal
+
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -33,12 +35,12 @@ app.add_middleware(
 
 # ---------------- Models ----------------
 class WxRequest(BaseModel):
-    units = None  # "metric" or "imperial"
-    place = None  # plain-language place name
+    units: Optional[Literal["metric", "imperial"]] = None  # "metric" or "imperial"
+    place: Optional[str] = None  # plain-language place name
 
 
 class QARequest(WxRequest):
-    question = None
+    question: Optional[str] = None
 
 
 # ---------------- Geocoding helpers ----------------
