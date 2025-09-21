@@ -112,7 +112,7 @@ async def fetch_forecast(lat: float, lon: float, units: str):
     else:
         main = "Clear"
 
-    current = {"temp": cur_temp, "weather": [{"main": main}]}
+    current = {"temp": cur_temp}
 
     hourly = []
     times = om.get("hourly", {}).get("time", []) or []
@@ -126,9 +126,7 @@ async def fetch_forecast(lat: float, lon: float, units: str):
     tmin = om.get("daily", {}).get("temperature_2m_min", []) or []
     popd = om.get("daily", {}).get("precipitation_probability_max", []) or []
     for i in range(min(len(tmax), len(tmin))):
-        daily.append(
-            {"temp": {"min": tmin[i], "max": tmax[i]}, "pop": (popd[i] or 0) / 100.0}
-        )
+        daily.append({"temp": {"min": tmin[i], "max": tmax[i]}})
 
     return {"current": current, "hourly": hourly, "daily": daily}
 
