@@ -108,7 +108,7 @@ async def fetch_forecast(lat: float, lon: float, units: str):
     temps = om.get("hourly", {}).get("temperature_2m", []) or []
     pops = om.get("hourly", {}).get("precipitation_probability", []) or []
     for i in range(min(len(times), len(temps))):
-        hourly.append({"dt": i, "temp": temps[i], "pop": (pops[i] or 0) / 100.0})
+        hourly.append({"temp": temps[i], "pop": (pops[i] or 0) / 100.0})
 
     daily = []
     tmax = om.get("daily", {}).get("temperature_2m_max", []) or []
