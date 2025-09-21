@@ -12,6 +12,7 @@ TEXT_QA_PROMPT = (
 PLAN_MY_DAY_PROMPT = (
     "Using the forecast JSON, give a three-part plan: Morning, Afternoon, Evening. Include temp ranges, rain chances, "
     "and one clothing/commute tip per part. Max 120 words."
+    "Forecast JSON (subset):{snippet}"
 )
 
 SYSTEM_VISION_ASSISTANT = (

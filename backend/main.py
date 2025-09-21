@@ -42,7 +42,7 @@ class QARequest(WxRequest):
 
 
 # ---------------- Geocoding helpers ----------------
-async def geocode_place(place: str):
+async def geocode_place(place: str):  # ------------------------------------------------
     """
     Resolve a place name to (lat, lon) using Open-Meteo geocoding.
     Returns None if not found/errors.
@@ -64,7 +64,7 @@ async def geocode_place(place: str):
     return None
 
 
-def extract_place_from_question(q: str):
+def extract_place_from_question(q: str):  # --------------------------------------------
     """
     Grab trailing 'in <place>' from the question.
     E.g.: 'Should I take umbrella at 7PM in Mumbai?'
@@ -79,7 +79,9 @@ def extract_place_from_question(q: str):
 
 
 # ---------------- Forecast via Open-Meteo ----------------
-async def fetch_forecast(lat: float, lon: float, units: str):
+async def fetch_forecast(
+    lat: float, lon: float, units: str
+):  # ------------------------
     temp_unit = "fahrenheit" if units == "imperial" else "celsius"
     wind_unit = "mph" if units == "imperial" else "kmh"
 
@@ -168,7 +170,9 @@ def _fallback_plan(forecast: dict) -> str:
     max_pop = max(pops) if pops else 0.0
     tip_m = "Light layer and sunglasses." if (tmax or 20) >= 20 else "Warm layer."
     tip_a = (
-        "Carry a compact umbrella." if max_pop >= 0.3 else "Hydrate and take shade breaks."
+        "Carry a compact umbrella."
+        if max_pop >= 0.3
+        else "Hydrate and take shade breaks."
     )
     tip_e = (
         "Light jacket if it cools down."
@@ -211,7 +215,7 @@ async def plan_my_day_llm(forecast: dict) -> str:
             },
             indent=2,
         )
-        prompt = f"{PLAN_MY_DAY_PROMPT}\n\nJSON:\n{snippet}"
+        prompt = PLAN_MY_DAY_PROMPT.format(snippet=snippet)
         resp = openai_client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
