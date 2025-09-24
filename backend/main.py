@@ -35,10 +35,10 @@ app.add_middleware(
 
 # ---------------- Models ----------------
 class WxRequest(BaseModel):
-    place: Optional[str] = None  # plain-language place name
+    place: Optional[str] = None
 
 
-class QARequest(WxRequest):
+class QARequest(BaseModel):
     question: Optional[str] = None
 
 
@@ -202,7 +202,7 @@ async def ask_text_llm(question: str, forecast: dict) -> str:
         )
         return (resp.choices[0].message.content or "").strip()
     except Exception:
-        return _fallback_text_answer(question, forecast)
+        return _fallback_text_answer(forecast)
 
 
 async def plan_my_day_llm(forecast: dict) -> str:
