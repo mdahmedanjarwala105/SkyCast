@@ -1,37 +1,39 @@
-🌤️ SkyCast
+# 🌤️ SkyCast  
 
-AI-powered Weather Assistant (Open-Meteo + OpenAI + Gemini Vision + FastAPI + Vanilla JS Frontend)
+**AI-powered Weather Assistant**  
+*(Open-Meteo + OpenAI + Gemini Vision + FastAPI + Vanilla JS Frontend)*  
 
-SkyCast is a smart weather assistant that combines live forecast data with AI to give you:
+SkyCast is a smart weather assistant that combines **live forecast data** with **AI intelligence** to give you:  
 
-✅ Quick answers to natural language weather questions (e.g., “Umbrella at 6 PM in Mumbai?”)
+✅ **Quick answers** to natural language weather questions  
+  *(e.g., “Umbrella at 6 PM in Mumbai?”)*  
 
-✅ A personalized day plan (Morning, Afternoon, Evening) with tips on clothing/commute
+✅ **Personalized day plans** (Morning, Afternoon, Evening)  
+  with temp ranges, rain chances & clothing tips 👕☂️  
 
-✅ A visual nowcast: upload a sky photo and get AI-based analysis of clouds, brightness, and rain/storm signs
+✅ **Visual nowcast** – Upload a sky photo & get AI-based analysis  
+  of clouds ☁️, brightness ☀️, and storm signs 🌩️  
 
-✨ Features
+---
 
-Natural Language Q&A – Ask questions like “Will it rain tonight in New York?”
+## ✨ Features  
 
-Plan My Day – Get a structured plan with temperature ranges, rain chances, and clothing suggestions
+- 🌍 **Natural Language Q&A** – Ask things like *“Will it rain tonight in New York?”*  
+- 📅 **Plan My Day** – Structured plan with temperatures, rain chances & tips  
+- 📸 **Visual Nowcast** – AI analysis of sky photos  
+- 🔄 **Fallback Logic** – Rule-based answers if AI/API fails  
+- ⚡ **Modern Stack** – FastAPI backend, OpenAI & Gemini APIs, clean HTML/JS frontend  
 
-Visual Nowcast – Upload a photo of the sky and let Gemini Vision describe current conditions
+---
 
-Fallback Logic – If AI fails, simple rule-based answers still provide guidance
+## 🛠️ Tech Stack  
 
-Modern Stack – FastAPI backend, OpenAI & Google Gemini APIs, and a clean HTML/JS frontend
+**Backend**: Python 3, FastAPI, httpx, Pydantic  
 
-🛠️ Tech Stack
+**AI APIs**:  
+- 🤖 **OpenAI (`gpt-4.1-mini`)** → Q&A + Day Plans  
+- 🌤️ **Google Gemini (`gemini-1.5-flash`)** → Sky photo analysis  
 
-Backend: Python 3, FastAPI, httpx, Pydantic
+**Weather Data**: [Open-Meteo API](https://open-meteo.com/)  
 
-AI APIs:
-
-OpenAI (gpt-4.1-mini) → Q&A + day plans
-
-Google Gemini (gemini-1.5-flash) → Sky photo analysis
-
-Weather Data: Open-Meteo API
-
-Frontend: HTML, CSS, Vanilla JavaScript (fetch API)
+**Frontend**: HTML, CSS, Vanilla JavaScript (Fetch API)  
