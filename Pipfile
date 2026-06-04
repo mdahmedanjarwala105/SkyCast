@@ -18,8 +18,4 @@ pytest = "*"
 respx = "*"
 
 [requires]
-python_version = "3.13"
-
-[scripts]
-dev = "uvicorn backend.main:app --reload --port 8000"
-test = "pytest -q"
+python_version = "3.14"
