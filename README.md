@@ -1,5 +1,7 @@
 # 🌤️ SkyCast  
 
+[![CI](https://github.com/mdahmedanjarwala105/SkyCast/actions/workflows/ci.yml/badge.svg)](https://github.com/mdahmedanjarwala105/SkyCast/actions/workflows/ci.yml)
+
 **AI-powered Weather Assistant**  
 *(Open-Meteo + OpenAI + Gemini Vision + FastAPI + Vanilla JS Frontend)*  
 
@@ -37,3 +39,29 @@ SkyCast is a smart weather assistant that combines **live forecast data** with *
 **Weather Data**: [Open-Meteo API](https://open-meteo.com/)  
 
 **Frontend**: HTML, CSS, Vanilla JavaScript (Fetch API)  
+
+---
+
+## 🚀 Installation
+
+### Prerequisites
+- Python 3.13+
+- pipenv
+
+### Setup
+```bash
+git clone https://github.com/mdahmedanjarwala105/SkyCast.git
+cd SkyCast
+pipenv install
+pipenv run uvicorn backend.main:app --reload
+```
+
+### Docker
+```bash
+docker compose up --build
+```
+
+---
+
+## 📄 License
+This project is licensed under the MIT License.
