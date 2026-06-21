@@ -72,7 +72,9 @@ def geocode_place(place: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def fetch_forecast(lat: float, lon: float, units: str = DEFAULT_UNITS) -> Dict[str, Any]:
+def fetch_forecast(
+    lat: float, lon: float, units: str = DEFAULT_UNITS
+) -> Dict[str, Any]:
     """Fetch the weather forecast for specific latitude and longitude coordinates."""
     temp_unit = "fahrenheit" if units == "imperial" else "celsius"
     wind_unit = "mph" if units == "imperial" else "kmh"
@@ -177,7 +179,9 @@ async def run_weather_agent(user_question: str) -> str:
 
                     # Unpack arguments directly into the targeted function registry
                     result = TOOL_MAP[name](**args)
-                    tool_output = result if result is not None else {"error": "No data returned"}
+                    tool_output = (
+                        result if result is not None else {"error": "No data returned"}
+                    )
                 except Exception as e:
                     tool_output = {"error": f"Failed to execute {name}: {str(e)}"}
             else:

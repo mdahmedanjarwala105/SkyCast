@@ -22,20 +22,25 @@ def _get_client() -> genai.Client:
     return genai.Client(api_key=api_key)
 
 
-async def describe_image_with_backoff(client: genai.Client, model: str, config: types.GenerateContentConfig, contents: list, retries=3, initial_delay=2.0):
+async def describe_image_with_backoff(
+    client: genai.Client,
+    model: str,
+    config: types.GenerateContentConfig,
+    contents: list,
+    retries=3,
+    initial_delay=2.0,
+):
     """
-    Executes a content generation request with built-in asynchronous 
+    Executes a content generation request with built-in asynchronous
     exponential backoff specifically tuned for free-tier rate limits.
     """
     delay = initial_delay
     for attempt in range(retries):
         try:
-            # The SDK generate_content call is synchronous, so we run it in an executor 
+            # The SDK generate_content call is synchronous, so we run it in an executor
             # or wrap it cleanly to keep things non-blocking for FastAPI
             return client.models.generate_content(
-                model=model,
-                contents=contents,
-                config=config
+                model=model, contents=contents, config=config
             )
         except APIError as e:
             # Check for a 429 Rate Limit/Quota Exhausted status code
@@ -52,8 +57,8 @@ async def describe_image(image_bytes: bytes) -> str:
     Includes rate limit protection to match the core main.py workflow.
     """
     client = _get_client()
-    
-    # We upgrade the model to gemini-2.5-flash which has faster vision processing 
+
+    # We upgrade the model to gemini-2.5-flash which has faster vision processing
     # and shares your primary free tier ecosystem seamlessly.
     model_name = "gemini-3.5-flash"
 
@@ -68,19 +73,16 @@ async def describe_image(image_bytes: bytes) -> str:
         types.Part.from_text(text=VISION_PROMPT),
         types.Part.from_bytes(
             data=image_bytes,
-            mime_type="image/jpeg"  # Handles standard raw jpeg/png stream allocations
-        )
+            mime_type="image/jpeg",  # Handles standard raw jpeg/png stream allocations
+        ),
     ]
 
     try:
         response = await describe_image_with_backoff(
-            client=client,
-            model=model_name,
-            config=config,
-            contents=contents
+            client=client, model=model_name, config=config, contents=contents
         )
         return (response.text or "").strip() or "No description returned by the model."
-        
+
     except APIError as e:
         if e.code == 429:
             return "⚠️ Vision model quota exceeded — please try again later."
