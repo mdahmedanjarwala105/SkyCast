@@ -49,15 +49,15 @@ class QARequest(BaseModel):
 # ---------------- Core Tool Definitions ----------------
 
 
-def geocode_place(place: str) -> Optional[Dict[str, Any]]:
+async def geocode_place(place: str) -> Optional[Dict[str, Any]]:
     """Get the latitude and longitude coordinates for a given city or place name."""
     if not place:
         return None
     url = "https://geocoding-api.open-meteo.com/v1/search"
     params = {"name": place, "count": 1, "language": "en", "format": "json"}
     try:
-        with httpx.Client(timeout=10) as client:
-            r = client.get(url, params=params)
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(url, params=params)
             r.raise_for_status()
             data = r.json()
         if data.get("results"):
@@ -72,7 +72,7 @@ def geocode_place(place: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def fetch_forecast(
+async def fetch_forecast(
     lat: float, lon: float, units: str = DEFAULT_UNITS
 ) -> Dict[str, Any]:
     """Fetch the weather forecast for specific latitude and longitude coordinates."""
@@ -91,8 +91,8 @@ def fetch_forecast(
     }
     url = "https://api.open-meteo.com/v1/forecast"
     try:
-        with httpx.Client(timeout=20) as client:
-            r = client.get(url, params=params)
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(url, params=params)
             r.raise_for_status()
             om = r.json()
 
