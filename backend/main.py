@@ -1,5 +1,8 @@
-import os, json, re
+import os
+import json
+import asyncio
 from datetime import datetime, timezone
+from typing import Optional, Dict, Any
 
 import httpx
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body
@@ -7,26 +10,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-from openai import OpenAI
+# Import the Google GenAI SDK
+from google import genai
+from google.genai import types
+from google.genai.errors import APIError
 
-from .prompts import SYSTEM_TEXT_ASSISTANT, TEXT_QA_PROMPT, PLAN_MY_DAY_PROMPT
+from .prompts import SYSTEM_TEXT_ASSISTANT
 from .vision_providers import describe_image
-
-from typing import Optional, Literal
 
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DEFAULT_PLACE = os.getenv("DEFAULT_PLACE", "New York, NY")
 DEFAULT_UNITS = os.getenv("DEFAULT_UNITS", "metric")
 
-if not OPENAI_API_KEY:
-    raise RuntimeError("Set OPENAI_API_KEY in backend/.env")
+if not GEMINI_API_KEY:
+    raise RuntimeError("Set GEMINI_API_KEY in backend/.env")
 
-app = FastAPI(title="SkyCast API (Open-Meteo + OpenAI text + Gemini vision)")
+app = FastAPI(title="SkyCast AI Agent")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # for dev; lock down in prod
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -42,45 +46,34 @@ class QARequest(BaseModel):
     question: Optional[str] = None
 
 
-# ---------------- Geocoding helpers ----------------
-async def geocode_place(place: str):
-    """
-    Resolve a place name to (lat, lon) using Open-Meteo geocoding.
-    Returns None if not found/errors.
-    """
+# ---------------- Core Tool Definitions ----------------
+
+
+def geocode_place(place: str) -> Optional[Dict[str, Any]]:
+    """Get the latitude and longitude coordinates for a given city or place name."""
     if not place:
         return None
     url = "https://geocoding-api.open-meteo.com/v1/search"
     params = {"name": place, "count": 1, "language": "en", "format": "json"}
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(url, params=params)
+        with httpx.Client(timeout=10) as client:
+            r = client.get(url, params=params)
             r.raise_for_status()
             data = r.json()
         if data.get("results"):
             res = data["results"][0]
-            return float(res["latitude"]), float(res["longitude"]), res["name"]
+            return {
+                "latitude": float(res["latitude"]),
+                "longitude": float(res["longitude"]),
+                "name": res["name"],
+            }
     except Exception:
         return None
     return None
 
 
-def extract_place_from_question(q: str):
-    """
-    Grab trailing 'in <place>' from the question.
-    E.g.: 'Should I take umbrella at 7PM in Mumbai?'
-          'Rain in New York tonight'
-    """
-    if not q:
-        return None
-    m = re.search(
-        r"\bin\s+([A-Za-z][A-Za-z\s\.\-\,]+?)\s*[\?\.\!]*$", q.strip(), re.IGNORECASE
-    )
-    return m.group(1).strip() if m else None
-
-
-# ---------------- Forecast via Open-Meteo ----------------
-async def fetch_forecast(lat: float, lon: float, units: str):
+def fetch_forecast(lat: float, lon: float, units: str = DEFAULT_UNITS) -> Dict[str, Any]:
+    """Fetch the weather forecast for specific latitude and longitude coordinates."""
     temp_unit = "fahrenheit" if units == "imperial" else "celsius"
     wind_unit = "mph" if units == "imperial" else "kmh"
 
@@ -95,140 +88,115 @@ async def fetch_forecast(lat: float, lon: float, units: str):
         "timezone": "auto",
     }
     url = "https://api.open-meteo.com/v1/forecast"
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.get(url, params=params)
-        r.raise_for_status()
-        om = r.json()
-
-    cur_temp = om.get("current", {}).get("temperature_2m")
-
-    current = {"temp": cur_temp}
-
-    hourly = []
-    times = om.get("hourly", {}).get("time", []) or []
-    temps = om.get("hourly", {}).get("temperature_2m", []) or []
-    pops = om.get("hourly", {}).get("precipitation_probability", []) or []
-    for i in range(min(len(times), len(temps))):
-        hourly.append({"temp": temps[i], "pop": (pops[i] or 0) / 100.0})
-
-    daily = []
-    tmax = om.get("daily", {}).get("temperature_2m_max", []) or []
-    tmin = om.get("daily", {}).get("temperature_2m_min", []) or []
-    for i in range(min(len(tmax), len(tmin))):
-        daily.append({"temp": {"min": tmin[i], "max": tmax[i]}})
-
-    return {"current": current, "hourly": hourly, "daily": daily}
-
-
-# ---------------- OpenAI text LLM (with fallbacks) ----------------
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
-
-
-def _fallback_text_answer(forecast: dict) -> str:
-    cur = forecast.get("current", {}) or {}
-    hourly = forecast.get("hourly", []) or []
-    t = cur.get("temp")
-    pops = [h.get("pop", 0.0) or 0.0 for h in hourly[:6]]
-    max_pop = max(pops) if pops else 0.0
-    if max_pop >= 0.5:
-        rain_msg = "Likely rain in the next few hours—carry an umbrella. ☔"
-    elif max_pop >= 0.2:
-        rain_msg = (
-            "There's a small chance of light showers—consider a compact umbrella. 🌦️"
-        )
-    else:
-        rain_msg = "Rain is unlikely in the next few hours. 🙂"
-    unit = "F" if os.getenv("DEFAULT_UNITS") == "imperial" else "C"
-    temp_msg = f" Current temp: {int(round(t))}°{unit}." if t is not None else ""
-    return f"{rain_msg}{temp_msg}"
-
-
-def _fallback_plan(forecast: dict) -> str:
-    hourly = forecast.get("hourly", []) or []
-    daily = forecast.get("daily", []) or []
-    temps = [h.get("temp") for h in hourly[:12] if h.get("temp") is not None]
-    if not temps and daily:
-        temps = [
-            daily[0].get("temp", {}).get("min"),
-            daily[0].get("temp", {}).get("max"),
-        ]
-        temps = [t for t in temps if t is not None]
-    if temps:
-        tmin, tmax = min(temps), max(temps)
-    else:
-        tmin = tmax = None
-
-    if tmin == tmax:
-        range = f"{int(round(tmin))}°"
-    elif tmin != tmax:
-        range = f"{int(round(tmin))}-{int(round(tmax))}°"
-    elif tmin is None and tmax is None:
-        range = "-"
-
-    pops = [h.get("pop", 0.0) or 0.0 for h in hourly[:12]]
-    max_pop = max(pops) if pops else 0.0
-    tip_m = "Light layer and sunglasses." if (tmax or 20) >= 20 else "Warm layer."
-    tip_a = (
-        "Carry a compact umbrella."
-        if max_pop >= 0.3
-        else "Hydrate and take shade breaks."
-    )
-    tip_e = (
-        "Light jacket if it cools down."
-        if (tmin or 16) <= 18
-        else "Evening should be mild."
-    )
-    return f"Morning: Start easy. {tip_m}\nAfternoon: Peak around {range}. {tip_a}\nEvening: {tip_e}"
-
-
-async def ask_text_llm(question: str, forecast: dict) -> str:
     try:
-        snippet = json.dumps(
-            {
-                "current": forecast.get("current", {}),
-                "hourly": forecast.get("hourly", [])[:6],
-                "daily": forecast.get("daily", [])[:1],
-            },
-            indent=2,
-        )
-        prompt = TEXT_QA_PROMPT.format(question=question, snippet=snippet)
-        resp = openai_client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {"role": "system", "content": SYSTEM_TEXT_ASSISTANT},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.2,
-        )
-        return (resp.choices[0].message.content or "").strip()
-    except Exception:
-        return _fallback_text_answer(forecast)
+        with httpx.Client(timeout=20) as client:
+            r = client.get(url, params=params)
+            r.raise_for_status()
+            om = r.json()
+
+        return {
+            "current": {"temp": om.get("current", {}).get("temperature_2m")},
+            "hourly": [
+                {"temp": t, "pop": (p or 0) / 100.0}
+                for t, p in zip(
+                    om.get("hourly", {}).get("temperature_2m", []),
+                    om.get("hourly", {}).get("precipitation_probability", []),
+                )
+            ][:12],
+            "daily": [
+                {"temp": {"min": mn, "max": mx}}
+                for mn, mx in zip(
+                    om.get("daily", {}).get("temperature_2m_min", []),
+                    om.get("daily", {}).get("temperature_2m_max", []),
+                )
+            ][:3],
+        }
+    except Exception as e:
+        return {"error": f"Failed to retrieve weather: {str(e)}"}
 
 
-async def plan_my_day_llm(forecast: dict) -> str:
-    try:
-        snippet = json.dumps(
-            {
-                "hourly": forecast.get("hourly", [])[:12],
-                "daily": forecast.get("daily", [])[:1],
-            },
-            indent=2,
-        )
-        prompt = PLAN_MY_DAY_PROMPT.format(snippet=snippet)
-        resp = openai_client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {"role": "system", "content": SYSTEM_TEXT_ASSISTANT},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.2,
-        )
-        return (resp.choices[0].message.content or "").strip()
-    except Exception:
-        return _fallback_plan(forecast)
+# ---------------- Tool Registry & Mapping ----------------
+
+# Dictionary mapping tool string names to actual function references
+TOOL_MAP = {
+    "geocode_place": geocode_place,
+    "fetch_forecast": fetch_forecast,
+}
+
+# Automatically derive the list of tool definitions for Gemini's client config
+AI_TOOLS = list(TOOL_MAP.values())
+
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 
-# ---------------- Routes ----------------
+# ---------------- Helper Logic ----------------
+
+
+async def send_message_with_backoff(chat, payload, retries=3, initial_delay=2.0):
+    """Sends a message to Gemini and automatically handles 429 rate limits."""
+    delay = initial_delay
+    for attempt in range(retries):
+        try:
+            return chat.send_message(payload)
+        except APIError as e:
+            if e.code == 429 and attempt < retries - 1:
+                await asyncio.sleep(delay)
+                delay *= 2
+                continue
+            raise e
+
+
+async def run_weather_agent(user_question: str) -> str:
+    """Executes a manual tool-calling loop using dynamic tool mapping."""
+    system_instruction = f"{SYSTEM_TEXT_ASSISTANT}. The default unit is {DEFAULT_UNITS}. The default fallback place is {DEFAULT_PLACE} if no location can be inferred."
+
+    chat = gemini_client.chats.create(
+        model="gemini-2.5-flash",
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            tools=AI_TOOLS,
+            temperature=0.3,
+        ),
+    )
+
+    response = await send_message_with_backoff(chat, user_question)
+
+    while response.function_calls:
+        function_responses = []
+
+        for function_call in response.function_calls:
+            name = function_call.name
+            args = function_call.args
+
+            # Dynamic Execution Loop
+            if name in TOOL_MAP:
+                try:
+                    # Inject default units if fallback processing is missing
+                    if name == "fetch_forecast" and "units" not in args:
+                        args["units"] = DEFAULT_UNITS
+
+                    # Unpack arguments directly into the targeted function registry
+                    result = TOOL_MAP[name](**args)
+                    tool_output = result if result is not None else {"error": "No data returned"}
+                except Exception as e:
+                    tool_output = {"error": f"Failed to execute {name}: {str(e)}"}
+            else:
+                tool_output = {"error": f"Unknown function invocation: {name}"}
+
+            function_responses.append(
+                types.Part.from_function_response(
+                    name=name, response={"result": tool_output}
+                )
+            )
+
+        response = await send_message_with_backoff(chat, function_responses)
+
+    return response.text.strip()
+
+
+# ---------------- Updated Agentic Routes ----------------
+
+
 @app.get("/api/health")
 async def health():
     return {"ok": True, "ts": datetime.now(timezone.utc).isoformat()}
@@ -236,43 +204,24 @@ async def health():
 
 @app.post("/api/ask")
 async def api_ask(req: QARequest):
-    place = extract_place_from_question(req.question) or DEFAULT_PLACE
-    coords = await geocode_place(place)
-    if coords:
-        lat, lon, resolved_name = coords
-    else:
-        raise HTTPException(
-            status_code=404, detail=f"Could not resolve place '{place}'"
-        )
+    if not req.question:
+        raise HTTPException(status_code=400, detail="Missing question parameter.")
     try:
-        forecast = await fetch_forecast(lat, lon, DEFAULT_UNITS)
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
-
-    answer = await ask_text_llm(req.question, forecast)
-    return {"answer": answer, "resolved_place": resolved_name}
+        answer = await run_weather_agent(req.question)
+        return {"answer": answer}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Agent Error: {str(e)}")
 
 
 @app.post("/api/plan")
 async def api_plan(req: WxRequest = Body(default=None)):
-    if req is None:
-        req = WxRequest()
-
-    place = req.place or DEFAULT_PLACE
-    coords = await geocode_place(place)
-    if coords:
-        lat, lon, resolved_name = coords
-    else:
-        raise HTTPException(
-            status_code=404, detail=f"Could not resolve place '{place}'"
-        )
+    place = (req.place if req else None) or DEFAULT_PLACE
+    prompt = f"Generate a precise daily schedule/plan for the weather at: {place} using the plan template standard format."
     try:
-        forecast = await fetch_forecast(lat, lon, DEFAULT_UNITS)
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
-
-    plan = await plan_my_day_llm(forecast)
-    return {"plan": plan, "resolved_place": resolved_name}
+        plan = await run_weather_agent(prompt)
+        return {"plan": plan, "resolved_place": place}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Agent Error: {str(e)}")
 
 
 @app.post("/api/nowcast")

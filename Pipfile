@@ -12,6 +12,7 @@ python-dotenv = "*"
 openai = "*"
 python-multipart = "*"
 google-generativeai = "*"
+google-genai = "*"
 
 [dev-packages]
 pytest = "*"
