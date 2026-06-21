@@ -49,15 +49,15 @@ class QARequest(BaseModel):
 # ---------------- Core Tool Definitions ----------------
 
 
-async def geocode_place(place: str) -> Optional[Dict[str, Any]]:
+def geocode_place(place: str) -> Optional[Dict[str, Any]]:
     """Get the latitude and longitude coordinates for a given city or place name."""
     if not place:
         return None
     url = "https://geocoding-api.open-meteo.com/v1/search"
     params = {"name": place, "count": 1, "language": "en", "format": "json"}
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(url, params=params)
+        with httpx.Client(timeout=10) as client:
+            r = client.get(url, params=params)
             r.raise_for_status()
             data = r.json()
         if data.get("results"):
@@ -72,7 +72,7 @@ async def geocode_place(place: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-async def fetch_forecast(
+def fetch_forecast(
     lat: float, lon: float, units: str = DEFAULT_UNITS
 ) -> Dict[str, Any]:
     """Fetch the weather forecast for specific latitude and longitude coordinates."""
@@ -91,8 +91,8 @@ async def fetch_forecast(
     }
     url = "https://api.open-meteo.com/v1/forecast"
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.get(url, params=params)
+        with httpx.Client(timeout=20) as client:
+            r = client.get(url, params=params)
             r.raise_for_status()
             om = r.json()
 
@@ -119,13 +119,13 @@ async def fetch_forecast(
 
 # ---------------- Tool Registry & Mapping ----------------
 
-# Dictionary mapping tool string names to actual function references
+# Dictionary mapping tool names directly to function objects
 TOOL_MAP = {
     "geocode_place": geocode_place,
     "fetch_forecast": fetch_forecast,
 }
 
-# Automatically derive the list of tool definitions for Gemini's client config
+# Provide the list of tools to Gemini natively
 AI_TOOLS = list(TOOL_MAP.values())
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
@@ -135,7 +135,7 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 async def send_message_with_backoff(chat, payload, retries=3, initial_delay=2.0):
-    """Sends a message to Gemini and automatically handles 429 rate limits."""
+    """Sends a message to Gemini and automatically handles 429 rate limit errors."""
     delay = initial_delay
     for attempt in range(retries):
         try:
@@ -149,11 +149,11 @@ async def send_message_with_backoff(chat, payload, retries=3, initial_delay=2.0)
 
 
 async def run_weather_agent(user_question: str) -> str:
-    """Executes a manual tool-calling loop using dynamic tool mapping."""
+    """Executes a manual tool-calling chat loop with resilient error recovery."""
     system_instruction = f"{SYSTEM_TEXT_ASSISTANT}. The default unit is {DEFAULT_UNITS}. The default fallback place is {DEFAULT_PLACE} if no location can be inferred."
 
     chat = gemini_client.chats.create(
-        model="gemini-3.5-flash",
+        model="gemini-2.5-flash",
         config=types.GenerateContentConfig(
             system_instruction=system_instruction,
             tools=AI_TOOLS,
@@ -170,18 +170,23 @@ async def run_weather_agent(user_question: str) -> str:
             name = function_call.name
             args = function_call.args
 
-            # Dynamic Execution Loop
+            # Refactored: Dynamic Dictionary Lookup mapping instead of if/elif chain
             if name in TOOL_MAP:
                 try:
-                    # Inject default units if fallback processing is missing
-                    if name == "fetch_forecast" and "units" not in args:
-                        args["units"] = DEFAULT_UNITS
+                    if name == "geocode_place":
+                        place_arg = args.get("place")
+                        result = TOOL_MAP[name](place_arg)
+                        tool_output = (
+                            result if result else {"error": "Location not found"}
+                        )
 
-                    # Unpack arguments directly into the targeted function registry
-                    result = TOOL_MAP[name](**args)
-                    tool_output = (
-                        result if result is not None else {"error": "No data returned"}
-                    )
+                    elif name == "fetch_forecast":
+                        # Explicitly enforce clean type extraction out of the LLM dictionary
+                        lat = float(args.get("lat", 0))
+                        lon = float(args.get("lon", 0))
+                        units = args.get("units", DEFAULT_UNITS)
+                        tool_output = TOOL_MAP[name](lat=lat, lon=lon, units=units)
+
                 except Exception as e:
                     tool_output = {"error": f"Failed to execute {name}: {str(e)}"}
             else:
@@ -198,7 +203,7 @@ async def run_weather_agent(user_question: str) -> str:
     return response.text.strip()
 
 
-# ---------------- Updated Agentic Routes ----------------
+# ---------------- Agentic Routes ----------------
 
 
 @app.get("/api/health")
