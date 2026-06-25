@@ -152,7 +152,7 @@ async def run_weather_agent(user_question: str) -> str:
     system_instruction = f"{SYSTEM_TEXT_ASSISTANT}. The default unit is {DEFAULT_UNITS}. The default fallback place is {DEFAULT_PLACE} if no location can be inferred."
 
     chat = gemini_client.chats.create(
-        model="gemini-2.5-flash",
+        model="gemini-3.5-flash",
         config=types.GenerateContentConfig(
             system_instruction=system_instruction,
             tools=AI_TOOLS,
